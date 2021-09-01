@@ -89,10 +89,12 @@ class Account(history: List<Event> = emptyList()) {
     }
 }
 
-sealed interface Event
-data class AccountDebited(val id: String, val amount: BigDecimal) : Event
-data class AccountCredited(val id: String, val amount: BigDecimal) : Event
-data class AccountOpened(val id: String) : Event
+sealed interface Event {
+    val id: String
+}
+data class AccountDebited(override val id: String, val amount: BigDecimal) : Event
+data class AccountCredited(override val id: String, val amount: BigDecimal) : Event
+data class AccountOpened(override val id: String) : Event
 
 sealed interface Command
 data class OpenAccount(val id: String) : Command

@@ -4,6 +4,7 @@ import com.damonkelley.venbo.accounts.AccountCredited
 import com.damonkelley.venbo.accounts.AccountDebited
 import com.damonkelley.venbo.accounts.CreditAccount
 import com.damonkelley.venbo.accounts.DebitAccount
+import com.damonkelley.venbo.accounts.Event
 import com.damonkelley.venbo.accounts.OpenAccount
 import com.damonkelley.venbo.infrastructure.Bus
 import com.damonkelley.venbo.infrastructure.Envelope
@@ -19,6 +20,17 @@ import com.damonkelley.venbo.payments.adapters.PaymentRepository
 import com.damonkelley.venbo.views.AccountBalance
 import com.damonkelley.venbo.views.InMemoryAccountBalanceRepository
 import com.damonkelley.venbo.views.ListenForCompletedPayments
+import io.ktor.application.install
+import io.ktor.application.log
+import io.ktor.http.cio.websocket.Frame
+import io.ktor.http.cio.websocket.readText
+import io.ktor.http.cio.websocket.send
+import io.ktor.routing.routing
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import io.ktor.websocket.WebSockets
+import io.ktor.websocket.webSocket
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -44,13 +56,15 @@ suspend fun main() {
         val bus = Bus<Envelope<Any>>(this)
         val store = InMemoryEventStore(bus::publish)
 
-        val send = { event: Any ->
-            bus.publish(Envelope(event, Trace("", "", "")))
+        fun send(trace: () -> Trace = { Trace() }): Publish {
+            return { event: Any ->
+                bus.publish(Envelope(event, trace()))
+            }
         }
 
         launch {
-            val handlers = CommandHandlers(PaymentRepository(store))
             bus.subscribe { event ->
+                val handlers = CommandHandlers(PaymentRepository(store, event.trace))
                 when (event.message) {
                     is InitiatePayment -> handlers.handle(event.message)
                     is CompletePayment -> handlers.handle(event.message)
@@ -58,12 +72,12 @@ suspend fun main() {
             }
         }
 
-//        launch { bus.subscribe(action = ::println) }
+        launch { bus.subscribe(action = ::println) }
 
         launch {
-            val handlers = AccountCommandHandlers(AccountRepository(store))
 
             bus.subscribe { command ->
+                val handlers = AccountCommandHandlers(AccountRepository(store, command.trace))
                 when (command.message) {
                     is OpenAccount -> handlers.handle(command.message)
                     is CreditAccount -> handlers.handle(command.message)
@@ -75,80 +89,79 @@ suspend fun main() {
         launch {
             bus.subscribe {
                 when (it.message) {
-                    is PaymentInitiated -> PaymentProcessManger(send).on(it.message)
+                    is PaymentInitiated -> PaymentProcessManger(send { Trace(it.trace) }).on(it.message)
                 }
             }
         }
 
         launch {
-            val id = UUID.randomUUID().toString()
-            val accountA = UUID.randomUUID().toString()
-            val accountB = UUID.randomUUID().toString()
-            val accountC = UUID.randomUUID().toString()
-            val accountD = UUID.randomUUID().toString()
+            UUID.randomUUID().toString()
 
-            listOf(accountA, accountB, accountC, accountD).forEach {
-                send(OpenAccount(id = it))
+            val accounts = (1..4).map { UUID.randomUUID().toString() }
+
+            accounts.forEach {
+                send()(OpenAccount(id = it))
             }
 
-            send(
-                InitiatePayment(
-                    id = id,
-                    fromAccount = accountA,
-                    toAccount = accountB,
-                    BigDecimal.TEN
-                )
-            )
+            while (true) {
+                delay((50..500L).random())
 
-            send(
-                InitiatePayment(
-                    id = UUID.randomUUID().toString(),
-                    fromAccount = accountA,
-                    toAccount = accountC,
-                    BigDecimal("500.30")
+                send()(
+                    InitiatePayment(
+                        id = UUID.randomUUID().toString(),
+                        fromAccount = accounts.random(),
+                        toAccount = accounts.random(),
+                        amount = BigDecimal("${(1..100).random()}")
+                    )
                 )
-            )
 
-            send(
-                InitiatePayment(
-                    id = UUID.randomUUID().toString(),
-                    fromAccount = accountB,
-                    toAccount = accountC,
-                    BigDecimal("20.50")
-                )
-            )
-
-            send(
-                InitiatePayment(
-                    id = UUID.randomUUID().toString(),
-                    fromAccount = accountC,
-                    toAccount = accountD,
-                    BigDecimal("34.76")
-                )
-            )
+            }
         }
 
+        val repository = InMemoryAccountBalanceRepository()
+
         launch {
-            val repository = InMemoryAccountBalanceRepository()
             bus.subscribe { event ->
                 when (event.message) {
-                    is AccountDebited -> ListenForCompletedPayments(repository).handle(event.message).also {
-                        repository.get(event.message.id)?.let(::showBalance)
+                    is Event -> ListenForCompletedPayments(repository).on(event.message)
+                }
+            }
+        }
+
+        embeddedServer(Netty, port = 8080) {
+            install(WebSockets)
+
+            routing {
+                webSocket("/payments") {
+                    bus.subscribe {
+                        when (it.message) {
+                            is PaymentInitiated -> launch {
+                                send("${it.message.fromAccount.slice(0..7)} paid ${it.message.toAccount.slice(0..7)} $${it.message.amount}")
+                            }
+                        }
                     }
-                    is AccountCredited -> ListenForCompletedPayments(repository).handle(event.message).also {
-                        repository.get(event.message.id)?.let(::showBalance)
+                }
+
+                webSocket("/accounts/{id}") {
+                    val accountId = call.parameters["id"] ?: cancel("Not found")
+
+                    bus.subscribe({ it.message is Event && it.message.id == accountId}) {
+                        when (it.message) {
+                            is Event -> launch {
+                                val balance = call.parameters["id"]?.let { id -> repository.get(id) }?.balance ?: BigDecimal.ZERO
+                                send("Balance: $balance")
+                            }
+                        }
                     }
                 }
             }
-
-            println(store.streams)
-        }
+        }.start(wait = false)
     }
 }
 
 fun showBalance(balance: AccountBalance) {
-    println("-".repeat(80) )
+    println("-".repeat(80))
     println("${balance.id} | ${balance.balance}")
-    println("-".repeat(80) )
+    println("-".repeat(80))
     println()
 }

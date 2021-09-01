@@ -7,7 +7,7 @@ import com.damonkelley.venbo.infrastructure.Trace
 import com.damonkelley.venbo.payments.Event
 import com.damonkelley.venbo.payments.Payment
 
-class PaymentRepository(private val store: EventStore) : Repository<Payment> {
+class PaymentRepository(private val store: EventStore, val trace: Trace) : Repository<Payment> {
     override fun get(id: String): Payment? {
         val events = store.load(id).map {
             when (it.message) {
@@ -23,7 +23,7 @@ class PaymentRepository(private val store: EventStore) : Repository<Payment> {
 
     override fun save(aggregate: Payment) {
         store.save(aggregate.id, aggregate.changes.map {
-            Envelope(message = it, trace = Trace("", "", ""))
+            Envelope(message = it, trace = Trace(trace))
         })
     }
 }
