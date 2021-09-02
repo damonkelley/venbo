@@ -4,22 +4,28 @@ import com.damonkelley.venbo.Repository
 import java.math.BigDecimal
 
 class CommandHandlers(private val accounts: Repository<Account>) {
-    fun handle(command: OpenAccount): Result<Unit> {
+    fun on(command: Command): Result<Unit> = when (command) {
+        is CreditAccount -> handle(command)
+        is DebitAccount -> handle(command)
+        is OpenAccount -> handle(command)
+    }
+
+    private fun handle(command: OpenAccount): Result<Unit> {
         accounts.save(Account().open(command.id))
         return Result.success(Unit)
     }
 
-    fun handle(command: CreditAccount): Result<Unit> {
+    private fun handle(command: CreditAccount): Result<Unit> {
         accounts.get(command.id)
-            ?.credit(command.amount)
+            ?.credit(command.toAccount, command.amount)
             ?.let(accounts::save)
 
         return Result.success(Unit)
     }
 
-    fun handle(command: DebitAccount): Result<Unit> {
+    private fun handle(command: DebitAccount): Result<Unit> {
         accounts.get(command.id)
-            ?.debit(command.amount)
+            ?.debit(command.fromAccount, command.amount)
             ?.let(accounts::save)
 
         return Result.success(Unit)
@@ -48,19 +54,21 @@ class Account(history: List<Event> = emptyList()) {
             .let(::handle)
     }
 
-    fun credit(amount: BigDecimal): Account {
+    fun credit(fromAccount: String, amount: BigDecimal): Account {
         return AccountCredited(
             id = id,
-            amount = amount
+            amount = amount,
+            fromAccount = fromAccount
         )
             .apply(::raise)
             .let(::handle)
     }
 
-    fun debit(amount: BigDecimal): Account {
+    fun debit(fromAccount: String, amount: BigDecimal): Account {
         return AccountDebited(
             id = id,
-            amount = amount
+            amount = amount,
+            toAccount = fromAccount
         )
             .apply(::raise)
             .let(::handle)
@@ -92,11 +100,12 @@ class Account(history: List<Event> = emptyList()) {
 sealed interface Event {
     val id: String
 }
-data class AccountDebited(override val id: String, val amount: BigDecimal) : Event
-data class AccountCredited(override val id: String, val amount: BigDecimal) : Event
+
+data class AccountDebited(override val id: String, val toAccount: String, val amount: BigDecimal) : Event
+data class AccountCredited(override val id: String, val fromAccount: String, val amount: BigDecimal) : Event
 data class AccountOpened(override val id: String) : Event
 
 sealed interface Command
 data class OpenAccount(val id: String) : Command
-data class DebitAccount(val id: String, val amount: BigDecimal) : Command
-data class CreditAccount(val id: String, val amount: BigDecimal) : Command
+data class DebitAccount(val id: String, val fromAccount: String, val amount: BigDecimal) : Command
+data class CreditAccount(val id: String, val toAccount: String, val amount: BigDecimal) : Command
