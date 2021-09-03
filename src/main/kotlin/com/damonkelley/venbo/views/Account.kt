@@ -3,7 +3,6 @@ package com.damonkelley.venbo.views
 import com.damonkelley.venbo.Repository
 import com.damonkelley.venbo.accounts.AccountCredited
 import com.damonkelley.venbo.accounts.AccountDebited
-import com.damonkelley.venbo.accounts.AccountOpened
 import com.damonkelley.venbo.accounts.Event
 import java.math.BigDecimal
 
@@ -14,7 +13,7 @@ class ListenForCompletedPayments(private val repository: Repository<AccountBalan
         return when(event) {
             is AccountDebited -> handle(event)
             is AccountCredited -> handle(event)
-            is AccountOpened -> Result.success(Unit)
+            else ->  Result.success(Unit)
         }
     }
 

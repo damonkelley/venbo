@@ -11,8 +11,10 @@ data class PaymentInitiated(
 ) : Event
 
 data class PaymentCompleted(
+    val id: String
+) : Event
+
+data class PaymentRejected(
     val id: String,
-    val fromAccount: String,
-    val toAccount: String,
-    val amount: BigDecimal,
+    val reason: String,
 ) : Event

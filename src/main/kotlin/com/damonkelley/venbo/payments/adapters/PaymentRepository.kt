@@ -9,10 +9,10 @@ import com.damonkelley.venbo.payments.Payment
 
 class PaymentRepository(private val store: EventStore, val trace: Trace) : Repository<Payment> {
     override fun get(id: String): Payment? {
-        val events = store.load(id).map {
-            when (it.message) {
-                is Event -> it.message
-                else -> throw Exception("incompatible event")
+        val events = store.load(id).map { envelope ->
+            when (envelope.message) {
+                is Event -> envelope.message
+                else -> println("===> ${envelope.message}").let { throw Exception("incompatible payment event $envelope") }
             }
         }
 

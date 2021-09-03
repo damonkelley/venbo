@@ -1,6 +1,10 @@
 package com.damonkelley.venbo
 
+import com.damonkelley.venbo.accounts.AccountCredited
+import com.damonkelley.venbo.accounts.AccountDebitRejected
+import com.damonkelley.venbo.accounts.AccountDebited
 import com.damonkelley.venbo.accounts.Command
+import com.damonkelley.venbo.accounts.CreditAccount
 import com.damonkelley.venbo.accounts.Event
 import com.damonkelley.venbo.accounts.OpenAccount
 import com.damonkelley.venbo.accounts.adapters.AccountRepository
@@ -12,7 +16,6 @@ import com.damonkelley.venbo.payments.CommandHandlers
 import com.damonkelley.venbo.payments.CompletePayment
 import com.damonkelley.venbo.payments.InitiatePayment
 import com.damonkelley.venbo.payments.PaymentInitiated
-import com.damonkelley.venbo.payments.PaymentProcessManger
 import com.damonkelley.venbo.payments.adapters.PaymentRepository
 import com.damonkelley.venbo.views.InMemoryAccountBalanceRepository
 import com.damonkelley.venbo.views.ListenForCompletedPayments
@@ -55,11 +58,11 @@ suspend fun main() {
         }
 
         launch {
-            bus.subscribe { event ->
-                val handlers = CommandHandlers(PaymentRepository(store, event.trace))
-                when (event.message) {
-                    is InitiatePayment -> handlers.handle(event.message)
-                    is CompletePayment -> handlers.handle(event.message)
+            bus.subscribe { envelope ->
+                val handlers = CommandHandlers(PaymentRepository(store, envelope.trace))
+                when (val message = envelope.message) {
+                    is InitiatePayment -> handlers.handle(message)
+                    is CompletePayment -> handlers.handle(message)
                 }
             }
         }
@@ -77,19 +80,23 @@ suspend fun main() {
 
         launch {
             bus.subscribe {
-                when (it.message) {
-                    is PaymentInitiated -> PaymentProcessManger(send { Trace(it.trace) }).on(it.message)
-                }
+                PaymentProcessManger(send { Trace(it.trace) }).on(it.message)
             }
         }
 
         launch {
             UUID.randomUUID().toString()
 
-            val accounts = (1..4).map { UUID.randomUUID().toString() }
+            val accounts = listOf(
+                "joe",
+                "annie",
+                "jane",
+                "jack"
+            )
 
             accounts.forEach {
                 send()(OpenAccount(id = it))
+                send()(CreditAccount(id = it, paymentId = "signup-bonus", fromAccount = "venbo", amount = BigDecimal("50")))
             }
 
             while (true) {
@@ -100,7 +107,7 @@ suspend fun main() {
                         id = UUID.randomUUID().toString(),
                         fromAccount = accounts.random(),
                         toAccount = accounts.random(),
-                        amount = BigDecimal("${(1..100).random()}")
+                        amount = BigDecimal("${(1..30).random()}")
                     )
                 )
 
@@ -133,8 +140,13 @@ suspend fun main() {
 
                 webSocket("/accounts/{id}") {
                     val accountId = call.parameters["id"] ?: cancel("Not found")
+                    bus.subscribe({ it.message is Event && it.message.id == accountId }) {
+                        when (val message = it.message) {
+                            is AccountCredited -> launch { send("Account credited for ${message.amount}") }
+                            is AccountDebited -> launch { send("Account debited for ${message.amount}") }
+                            is AccountDebitRejected -> launch { send("Account debit rejected because of ${message.reason.lowercase()}") }
+                        }
 
-                    bus.subscribe({ it.message is Event && it.message.id == accountId}) {
                         when (it.message) {
                             is Event -> launch {
                                 val balance = call.parameters["id"]

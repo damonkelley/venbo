@@ -13,3 +13,8 @@ data class InitiatePayment(
 data class CompletePayment(
     val id: String,
 ) : Command
+
+data class RejectPayment(
+    val id: String,
+    val reason: String,
+) : Command

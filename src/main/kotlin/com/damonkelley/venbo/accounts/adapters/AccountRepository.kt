@@ -12,7 +12,7 @@ class AccountRepository(private val store: EventStore, val trace: Trace) : Repos
         val events = store.load(id).map {
             when (it.message) {
                 is Event -> it.message
-                else -> throw Exception("incompatible event")
+                else -> throw Exception("incompatible account event")
             }
         }
 

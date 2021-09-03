@@ -19,4 +19,10 @@ class CommandHandlers(private val payments: Repository<Payment>) {
             ?.let { it.complete() }
             ?.let { payments.save(it) }
     }
+
+    fun handle(command: RejectPayment) {
+        payments.get(command.id)
+            ?.let { it.reject(command.reason) }
+            ?.let { payments.save(it) }
+    }
 }

@@ -27,12 +27,13 @@ class Payment(history: List<Event> = emptyList()) {
     }
 
     fun complete(): Payment {
-        return PaymentCompleted(
-            id = id,
-            toAccount = toAccount,
-            fromAccount = fromAccount,
-            amount = amount
-        )
+        return PaymentCompleted(id = id)
+            .apply(::raise)
+            .let(::handle)
+    }
+
+    fun reject(reason: String): Payment {
+        return PaymentRejected(id = id, reason = reason)
             .apply(::raise)
             .let(::handle)
     }
@@ -53,5 +54,9 @@ class Payment(history: List<Event> = emptyList()) {
 
     private fun handle(event: PaymentCompleted): Payment {
         return apply { status = "completed" }
+    }
+
+    private fun handle(event: PaymentRejected): Payment {
+        return apply { status = "rejected" }
     }
 }

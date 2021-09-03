@@ -17,7 +17,11 @@ class CommandHandlers(private val accounts: Repository<Account>) {
 
     private fun handle(command: CreditAccount): Result<Unit> {
         accounts.get(command.id)
-            ?.credit(command.toAccount, command.amount)
+            ?.credit(
+                fromAccount = command.fromAccount,
+                paymentId = command.paymentId,
+                amount = command.amount
+            )
             ?.let(accounts::save)
 
         return Result.success(Unit)
@@ -25,7 +29,11 @@ class CommandHandlers(private val accounts: Repository<Account>) {
 
     private fun handle(command: DebitAccount): Result<Unit> {
         accounts.get(command.id)
-            ?.debit(command.fromAccount, command.amount)
+            ?.debit(
+                fromAccount = command.toAccount,
+                paymentId = command.paymentId,
+                amount = command.amount
+            )
             ?.let(accounts::save)
 
         return Result.success(Unit)
@@ -44,6 +52,7 @@ class Account(history: List<Event> = emptyList()) {
                 is AccountOpened -> handle(it)
                 is AccountDebited -> handle(it)
                 is AccountCredited -> handle(it)
+                is AccountDebitRejected -> Unit
             }
         }
     }
@@ -54,20 +63,34 @@ class Account(history: List<Event> = emptyList()) {
             .let(::handle)
     }
 
-    fun credit(fromAccount: String, amount: BigDecimal): Account {
+    // TODO: Refactor to accept a datastructure
+    fun credit(fromAccount: String, paymentId: String, amount: BigDecimal): Account {
         return AccountCredited(
             id = id,
             amount = amount,
+            paymentId = paymentId,
             fromAccount = fromAccount
         )
             .apply(::raise)
             .let(::handle)
     }
 
-    fun debit(fromAccount: String, amount: BigDecimal): Account {
+    fun debit(fromAccount: String, paymentId: String, amount: BigDecimal): Account {
+        if (balance - amount < BigDecimal.ZERO) {
+            return AccountDebitRejected(
+                id = id,
+                amount = amount,
+                paymentId = paymentId,
+                toAccount = fromAccount,
+                reason = "Insufficient funds"
+            ).apply(::raise)
+                .let(::handle)
+
+        }
         return AccountDebited(
             id = id,
             amount = amount,
+            paymentId = paymentId,
             toAccount = fromAccount
         )
             .apply(::raise)
@@ -95,17 +118,42 @@ class Account(history: List<Event> = emptyList()) {
             balance -= event.amount
         }
     }
+
+    private fun handle(event: AccountDebitRejected): Account {
+        return this
+    }
 }
 
 sealed interface Event {
     val id: String
 }
 
-data class AccountDebited(override val id: String, val toAccount: String, val amount: BigDecimal) : Event
-data class AccountCredited(override val id: String, val fromAccount: String, val amount: BigDecimal) : Event
+data class AccountDebited(
+    override val id: String,
+    val paymentId: String,
+    val toAccount: String,
+    val amount: BigDecimal
+) : Event
+
+data class AccountDebitRejected(
+    override val id: String,
+    val paymentId: String,
+    val toAccount: String,
+    val amount: BigDecimal,
+    val reason: String
+) : Event
+
+data class AccountCredited(
+    override val id: String,
+    val paymentId: String,
+    val fromAccount: String,
+    val amount: BigDecimal
+) : Event
+
 data class AccountOpened(override val id: String) : Event
 
 sealed interface Command
 data class OpenAccount(val id: String) : Command
-data class DebitAccount(val id: String, val fromAccount: String, val amount: BigDecimal) : Command
-data class CreditAccount(val id: String, val toAccount: String, val amount: BigDecimal) : Command
+data class DebitAccount(val id: String, val paymentId: String, val toAccount: String, val amount: BigDecimal) : Command
+data class CreditAccount(val id: String, val paymentId: String, val fromAccount: String, val amount: BigDecimal) :
+    Command
