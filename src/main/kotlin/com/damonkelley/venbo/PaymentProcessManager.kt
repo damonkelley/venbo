@@ -9,7 +9,7 @@ import com.damonkelley.venbo.payments.CompletePayment
 import com.damonkelley.venbo.payments.PaymentInitiated
 import com.damonkelley.venbo.payments.RejectPayment
 
-class PaymentProcessManger(val send: Publish) {
+class PaymentProcessManager(val send: Publish) {
     fun on(event: Any) {
         when (event) {
             is PaymentInitiated -> handle(event)

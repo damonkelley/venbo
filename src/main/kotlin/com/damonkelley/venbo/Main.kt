@@ -70,7 +70,6 @@ suspend fun main() {
         launch { bus.subscribe(action = ::println) }
 
         launch {
-
             bus.subscribe { command ->
                 when (command.message) {
                     is Command -> AccountCommandHandlers(AccountRepository(store, command.trace)).on(command.message)
@@ -80,7 +79,7 @@ suspend fun main() {
 
         launch {
             bus.subscribe {
-                PaymentProcessManger(send { Trace(it.trace) }).on(it.message)
+                PaymentProcessManager(send { Trace(it.trace) }).on(it.message)
             }
         }
 
@@ -132,7 +131,7 @@ suspend fun main() {
                     bus.subscribe {
                         when (val message = it.message) {
                             is PaymentInitiated -> launch {
-                                send("${message.fromAccount.slice(0..7)} paid ${message.toAccount.slice(0..7)} $${message.amount}")
+                                send("${message.fromAccount} wants to pay ${message.toAccount} $${message.amount}")
                             }
                         }
                     }
