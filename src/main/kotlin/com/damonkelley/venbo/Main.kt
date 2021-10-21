@@ -16,6 +16,7 @@ import com.damonkelley.venbo.payments.CommandHandlers
 import com.damonkelley.venbo.payments.CompletePayment
 import com.damonkelley.venbo.payments.InitiatePayment
 import com.damonkelley.venbo.payments.PaymentInitiated
+import com.damonkelley.venbo.payments.RejectPayment
 import com.damonkelley.venbo.payments.adapters.PaymentRepository
 import com.damonkelley.venbo.views.InMemoryAccountBalanceRepository
 import com.damonkelley.venbo.views.ListenForCompletedPayments
@@ -63,6 +64,7 @@ suspend fun main() {
                 when (val message = envelope.message) {
                     is InitiatePayment -> handlers.handle(message)
                     is CompletePayment -> handlers.handle(message)
+                    is RejectPayment -> handlers.handle(message)
                 }
             }
         }
